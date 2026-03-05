@@ -1,13 +1,16 @@
 import asyncio
 import json
+import threading
 import time
 from contextlib import asynccontextmanager
 from typing import Set
 
 import httpx
+import paho.mqtt.client as mqtt
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from google.transit import gtfs_realtime_pb2
 
 import config
 
@@ -23,13 +26,14 @@ state = {
     "stop_lon": config.HOME_LON,
 }
 
-# route short name -> gtfsId, populated at startup
-route_ids: dict[str, str] = {}
+# Live vehicle positions keyed by vehicle entity ID.
+# Updated directly by the MQTT thread; read by the broadcast loop.
+vehicle_state: dict = {}
 
 clients: Set[WebSocket] = set()
 
 # ---------------------------------------------------------------------------
-# API
+# GraphQL — arrivals
 # ---------------------------------------------------------------------------
 
 GRAPHQL_URL = "https://api.digitransit.fi/routing/v2/waltti/gtfs/v1"
@@ -59,31 +63,8 @@ ARRIVALS_QUERY = """
 }
 """ % (
     config.STOP_ID,
-    config.ARRIVALS_COUNT * 5,  # fetch extra so filtering still yields ARRIVALS_COUNT results
+    config.ARRIVALS_COUNT * 5,
 )
-
-# ---------------------------------------------------------------------------
-# Data fetchers
-# ---------------------------------------------------------------------------
-
-
-async def resolve_route_ids(client: httpx.AsyncClient) -> None:
-    """Fetch gtfsIds for the configured routes once at startup."""
-    feed = config.STOP_ID.split(":")[0]  # e.g. "Lappeenranta"
-    query = '{ routes(feeds:["%s"]) { gtfsId shortName } }' % feed
-    try:
-        resp = await client.post(
-            GRAPHQL_URL, json={"query": query}, headers=GRAPHQL_HEADERS, timeout=10
-        )
-        resp.raise_for_status()
-        routes = resp.json()["data"]["routes"]
-        allowed = {r.lower() for r in config.ROUTES_FILTER}
-        for r in routes:
-            if not allowed or r["shortName"].lower() in allowed:
-                route_ids[r["shortName"]] = r["gtfsId"]
-        print(f"Resolved route IDs: {route_ids}")
-    except Exception as e:
-        print(f"Route ID resolution error: {e}")
 
 
 async def fetch_arrivals(client: httpx.AsyncClient) -> None:
@@ -130,57 +111,65 @@ async def fetch_arrivals(client: httpx.AsyncClient) -> None:
         print(f"Arrivals fetch error: {e}")
 
 
-def build_vehicles_query() -> str:
-    """Build a GraphQL query that fetches vehiclePositions for all tracked routes."""
-    parts = []
-    for short_name, gtfs_id in route_ids.items():
-        alias = "r_" + short_name.replace(" ", "_").replace("-", "_")
-        parts.append(
-            f'{alias}: route(id: "{gtfs_id}") {{'
-            f'  shortName'
-            f'  patterns {{'
-            f'    vehiclePositions {{'
-            f'      lat lon heading lastUpdated'
-            f'    }}'
-            f'  }}'
-            f'}}'
-        )
-    return "{ " + " ".join(parts) + " }"
+# ---------------------------------------------------------------------------
+# MQTT — vehicle positions
+# ---------------------------------------------------------------------------
+
+MQTT_HOST = "mqtt.digitransit.fi"
+MQTT_PORT = 1883
+VEHICLE_STALE_SECONDS = 120  # drop vehicles not updated within this window
 
 
-async def fetch_vehicles(client: httpx.AsyncClient) -> None:
-    if not route_ids:
-        return
+def on_mqtt_connect(client, userdata, flags, rc, props=None):
+    feed = config.STOP_ID.split(":")[0]  # e.g. "Lappeenranta"
+    for route in config.ROUTES_FILTER:
+        topic = f"/gtfsrt/vp/{feed}/+/+/+/{route}/#"
+        client.subscribe(topic)
+        print(f"MQTT subscribed: {topic}")
+
+
+def on_mqtt_message(client, userdata, msg):
     try:
-        query = build_vehicles_query()
-        resp = await client.post(
-            GRAPHQL_URL, json={"query": query}, headers=GRAPHQL_HEADERS, timeout=10
-        )
-        resp.raise_for_status()
-        data = resp.json().get("data", {})
+        # Route short name is at position 7 of the topic
+        parts = msg.topic.split("/")
+        route = parts[7] if len(parts) > 7 else ""
 
-        vehicles = []
-        for route_data in data.values():
-            if not route_data:
+        feed = gtfs_realtime_pb2.FeedMessage()
+        feed.ParseFromString(msg.payload)
+
+        for entity in feed.entity:
+            if not entity.HasField("vehicle"):
                 continue
-            short_name = route_data["shortName"]
-            for i, pattern in enumerate(route_data["patterns"]):
-                for j, vp in enumerate(pattern["vehiclePositions"]):
-                    if vp["lat"] is None or vp["lon"] is None:
-                        continue
-                    vehicles.append(
-                        {
-                            "id": f"{short_name}_{i}_{j}",
-                            "route": short_name,
-                            "lat": vp["lat"],
-                            "lon": vp["lon"],
-                            "bearing": vp["heading"] or 0,
-                        }
-                    )
-
-        state["vehicles"] = vehicles
+            v = entity.vehicle
+            if not v.HasField("position"):
+                continue
+            bearing = v.position.bearing if v.position.HasField("bearing") else 0.0
+            vehicle_state[entity.id] = {
+                "id": entity.id,
+                "route": route,
+                "lat": v.position.latitude,
+                "lon": v.position.longitude,
+                "bearing": bearing,
+                "updated": time.time(),
+            }
     except Exception as e:
-        print(f"Vehicles fetch error: {e}")
+        print(f"MQTT message error: {e}")
+
+
+def start_mqtt() -> None:
+    client = mqtt.Client(
+        mqtt.CallbackAPIVersion.VERSION2,
+        client_id=f"pysakkitaulu-{int(time.time())}",
+    )
+    client.on_connect = on_mqtt_connect
+    client.on_message = on_mqtt_message
+    while True:
+        try:
+            client.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
+            client.loop_forever()
+        except Exception as e:
+            print(f"MQTT connection error: {e} — retrying in 30s")
+            time.sleep(30)
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +180,13 @@ async def fetch_vehicles(client: httpx.AsyncClient) -> None:
 async def broadcast() -> None:
     if not clients:
         return
+
+    # Flush stale vehicles before broadcasting
+    cutoff = time.time() - VEHICLE_STALE_SECONDS
+    state["vehicles"] = [
+        v for v in vehicle_state.values() if v["updated"] > cutoff
+    ]
+
     message = json.dumps(
         {
             "arrivals": state["arrivals"],
@@ -210,27 +206,25 @@ async def broadcast() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Background polling loop
+# Background polling loop (arrivals only — vehicles come from MQTT)
 # ---------------------------------------------------------------------------
+
+
+async def vehicle_broadcast_loop() -> None:
+    """Push vehicle positions to clients every 5 seconds."""
+    while True:
+        await asyncio.sleep(config.VEHICLES_INTERVAL)
+        await broadcast()
 
 
 async def poll_loop() -> None:
     async with httpx.AsyncClient() as client:
-        await resolve_route_ids(client)
-        await asyncio.gather(fetch_arrivals(client), fetch_vehicles(client))
+        await fetch_arrivals(client)
         await broadcast()
 
-        arrivals_countdown = config.ARRIVALS_INTERVAL
         while True:
-            await asyncio.sleep(config.VEHICLES_INTERVAL)
-            arrivals_countdown -= config.VEHICLES_INTERVAL
-
-            tasks = [fetch_vehicles(client)]
-            if arrivals_countdown <= 0:
-                tasks.append(fetch_arrivals(client))
-                arrivals_countdown = config.ARRIVALS_INTERVAL
-
-            await asyncio.gather(*tasks)
+            await asyncio.sleep(config.ARRIVALS_INTERVAL)
+            await fetch_arrivals(client)
             await broadcast()
 
 
@@ -241,7 +235,10 @@ async def poll_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    mqtt_thread = threading.Thread(target=start_mqtt, daemon=True)
+    mqtt_thread.start()
     asyncio.create_task(poll_loop())
+    asyncio.create_task(vehicle_broadcast_loop())
     yield
 
 

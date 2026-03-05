@@ -24,28 +24,9 @@ const map = L.map('map', {
   keyboard: false,
 }).setView([61.0551667, 28.1992105], 14);
 
-// --- Map tile options — uncomment one ---
-
-// 1. OpenStreetMap — standard colourful map
-// const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-
-// 2. CartoDB Positron — clean light grey, minimal labels
-// const tileUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-
-// 3. CartoDB Dark Matter — dark background, white labels
-// const tileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-
-// 4. CartoDB Voyager — colourful but cleaner than OSM
-// const tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-
-// 5. Stadia Alidade Smooth — muted, low-contrast light
-// const tileUrl = 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png';
-
-// 6. Stadia Alidade Smooth Dark — muted dark, easy on the eyes
+// Stadia Alidade Smooth Dark — muted dark, easy on the eyes
 const tileUrl = 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png';
 
-// 7. Stadia OSM Bright — vivid OSM-style
-// const tileUrl = 'https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.png';
 
 L.tileLayer(tileUrl, { maxZoom: 19 }).addTo(map);
 
