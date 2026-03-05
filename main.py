@@ -16,6 +16,8 @@ import config
 # Shared state
 # ---------------------------------------------------------------------------
 
+vehicles_unavailable = False  # set True after first 404 to stop retrying
+
 state = {
     "arrivals": [],
     "vehicles": [],
@@ -109,8 +111,15 @@ async def fetch_arrivals(client: httpx.AsyncClient) -> None:
 
 
 async def fetch_vehicles(client: httpx.AsyncClient) -> None:
+    global vehicles_unavailable
+    if vehicles_unavailable:
+        return
     try:
         resp = await client.get(GTFSRT_URL, headers=GTFSRT_HEADERS, timeout=10)
+        if resp.status_code == 404:
+            print("Vehicle positions not available for this region — live bus markers disabled.")
+            vehicles_unavailable = True
+            return
         resp.raise_for_status()
 
         feed = gtfs_realtime_pb2.FeedMessage()
