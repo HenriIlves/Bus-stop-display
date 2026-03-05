@@ -7,7 +7,7 @@ API_KEY = "YOUR_API_KEY_HERE"
 # Your nearest bus stop ID.
 # Find it at: https://api.digitransit.fi/graphiql/waltti/v2
 # Example query:  { stops(name: "Myllymäki") { gtfsId name } }
-STOP_ID = "waltti:STOP_ID_HERE"
+STOP_ID = "lappeenranta:STOP_ID_HERE"
 
 # Map center — set to your home coordinates
 HOME_LAT = 61.0587
@@ -20,5 +20,5 @@ ROUTES_FILTER = ["1", "1x", "5"]
 ARRIVALS_COUNT = 8
 
 # Polling intervals (seconds)
-ARRIVALS_INTERVAL = 30
+ARRIVALS_INTERVAL = 20
 VEHICLES_INTERVAL = 5

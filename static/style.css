@@ -26,7 +26,7 @@ body {
 #stop-name {
   font-size: 18px;
   font-weight: bold;
-  color: #58a6ff;
+  color: #C70067;
   letter-spacing: 0.02em;
 }
 
@@ -46,7 +46,7 @@ body {
 
 /* ---- Arrivals panel ---- */
 #arrivals-panel {
-  width: 272px;
+  width: 200px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -60,8 +60,8 @@ body {
   table-layout: fixed;
 }
 
-#arrivals-table colgroup col:nth-child(1) { width: 140px; }
-#arrivals-table colgroup col:nth-child(2) { width: 132px; }
+#arrivals-table colgroup col:nth-child(1) { width: 100px; }
+#arrivals-table colgroup col:nth-child(2) { width: 100px; }
 
 .arrival-row {
   border-bottom: 1px solid #21262d;
@@ -73,13 +73,13 @@ body {
 }
 
 .col-route {
-  text-align: center;
-  padding: 0 4px;
+  text-align: left;
+  padding-left: 20px;
 }
 
 .route-badge {
   display: inline-block;
-  background: #1f6feb;
+  background: #C70067;
   color: #fff;
   font-size: 20px;
   font-weight: bold;
@@ -92,7 +92,7 @@ body {
 
 .col-time {
   text-align: right;
-  padding-right: 10px;
+  padding-right: 20px;
 }
 
 .time-value {
@@ -148,10 +148,10 @@ body {
 .stop-marker {
   width: 16px;
   height: 16px;
-  background: #58a6ff;
+  background: #C70067;
   border: 3px solid #fff;
   border-radius: 50%;
-  box-shadow: 0 0 6px rgba(88,166,255,0.7);
+  box-shadow: 0 0 6px rgba(199,0,103,0.7);
 }
 
 /* Bus marker */
