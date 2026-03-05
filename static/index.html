@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=800, initial-scale=1.0" />
+  <title>Pysakkitaulu</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <div id="header">
+    <div id="stop-name">Ladataan...</div>
+    <div id="clock">--:--</div>
+  </div>
+
+  <div id="main">
+    <div id="arrivals-panel">
+      <table id="arrivals-table">
+        <colgroup>
+          <col /><col /><col />
+        </colgroup>
+        <tbody id="arrivals-body">
+          <tr><td colspan="3" class="no-arrivals">Haetaan tietoja...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="map-panel">
+      <div id="map"></div>
+      <div id="status">Yhdistetaan...</div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
