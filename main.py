@@ -64,7 +64,7 @@ ARRIVALS_QUERY = """
 }
 """ % (
     config.STOP_ID,
-    config.ARRIVALS_COUNT,
+    config.ARRIVALS_COUNT * 5,  # fetch extra so filtering still yields ARRIVALS_COUNT results
 )
 
 # ---------------------------------------------------------------------------
@@ -105,7 +105,12 @@ async def fetch_arrivals(client: httpx.AsyncClient) -> None:
                 }
             )
 
-        state["arrivals"] = [a for a in arrivals if a["minutes"] >= 0]
+        allowed = {r.lower() for r in config.ROUTES_FILTER}
+        state["arrivals"] = [
+            a for a in arrivals
+            if a["minutes"] >= 0
+            and (not allowed or a["route"].lower() in allowed)
+        ][:config.ARRIVALS_COUNT]
     except Exception as e:
         print(f"Arrivals fetch error: {e}")
 
