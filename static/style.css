@@ -60,9 +60,8 @@ body {
   table-layout: fixed;
 }
 
-#arrivals-table colgroup col:nth-child(1) { width: 64px; }
-#arrivals-table colgroup col:nth-child(2) { width: 140px; }
-#arrivals-table colgroup col:nth-child(3) { width: 68px; }
+#arrivals-table colgroup col:nth-child(1) { width: 140px; }
+#arrivals-table colgroup col:nth-child(2) { width: 132px; }
 
 .arrival-row {
   border-bottom: 1px solid #21262d;
@@ -90,14 +89,6 @@ body {
   text-align: center;
 }
 
-.col-dest {
-  padding: 0 6px;
-  font-size: 16px;
-  color: #c9d1d9;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 
 .col-time {
   text-align: right;

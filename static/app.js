@@ -16,11 +16,38 @@ setInterval(updateClock, 10000);
 const map = L.map('map', {
   zoomControl: false,
   attributionControl: false,
-}).setView([61.0587, 28.1873], 14);
+  dragging: false,
+  touchZoom: false,
+  scrollWheelZoom: false,
+  doubleClickZoom: false,
+  boxZoom: false,
+  keyboard: false,
+}).setView([61.0551667, 28.1992105], 14);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-}).addTo(map);
+// --- Map tile options — uncomment one ---
+
+// 1. OpenStreetMap — standard colourful map
+// const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+// 2. CartoDB Positron — clean light grey, minimal labels
+// const tileUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+// 3. CartoDB Dark Matter — dark background, white labels
+// const tileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+
+// 4. CartoDB Voyager — colourful but cleaner than OSM
+// const tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+
+// 5. Stadia Alidade Smooth — muted, low-contrast light
+// const tileUrl = 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png';
+
+// 6. Stadia Alidade Smooth Dark — muted dark, easy on the eyes
+const tileUrl = 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png';
+
+// 7. Stadia OSM Bright — vivid OSM-style
+// const tileUrl = 'https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.png';
+
+L.tileLayer(tileUrl, { maxZoom: 19 }).addTo(map);
 
 // Stop marker (blue dot)
 const stopIcon = L.divIcon({
@@ -67,7 +94,7 @@ function escHtml(str) {
 function renderArrivals(arrivals) {
   const tbody = document.getElementById('arrivals-body');
   if (!arrivals || arrivals.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" class="no-arrivals">Ei lahtoja</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="2" class="no-arrivals">Ei lahtoja</td></tr>';
     return;
   }
 
@@ -76,13 +103,17 @@ function renderArrivals(arrivals) {
     let timeHtml;
     if (a.minutes === 0) {
       timeHtml = `<span class="time-now">Nyt${a.realtime ? '<span class="realtime-dot"></span>' : ''}</span>`;
-    } else {
+    } else if (a.minutes <= 10) {
       timeHtml = `<span class="time-value">${a.minutes}</span><span class="time-unit">min</span>${realtimeDot}`;
+    } else {
+      const d = new Date(a.epoch * 1000);
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      timeHtml = `<span class="time-value">${hh}:${mm}</span>${realtimeDot}`;
     }
     return `
       <tr class="arrival-row">
         <td class="col-route"><span class="route-badge">${escHtml(a.route)}</span></td>
-        <td class="col-dest">${escHtml(a.headsign)}</td>
         <td class="col-time">${timeHtml}</td>
       </tr>`;
   }).join('');
@@ -115,8 +146,6 @@ function renderVehicles(vehicles) {
 // -----------------------------------------------------------------------
 // WebSocket
 // -----------------------------------------------------------------------
-let mapCentered = false;
-
 function connect() {
   const ws = new WebSocket('ws://' + location.host + '/ws');
 
@@ -134,12 +163,9 @@ function connect() {
       document.getElementById('stop-name').textContent = data.stop_name;
     }
 
-    // Center map on stop once we have coordinates
-    if (!mapCentered && data.stop_lat && data.stop_lon) {
-      map.setView([data.stop_lat, data.stop_lon], 15);
+    if (data.stop_lat && data.stop_lon) {
       if (stopMarker) map.removeLayer(stopMarker);
       stopMarker = L.marker([data.stop_lat, data.stop_lon], { icon: stopIcon }).addTo(map);
-      mapCentered = true;
     }
 
     renderArrivals(data.arrivals);

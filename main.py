@@ -8,15 +8,12 @@ import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from google.transit import gtfs_realtime_pb2
 
 import config
 
 # ---------------------------------------------------------------------------
 # Shared state
 # ---------------------------------------------------------------------------
-
-vehicles_unavailable = False  # set True after first 404 to stop retrying
 
 state = {
     "arrivals": [],
@@ -26,22 +23,20 @@ state = {
     "stop_lon": config.HOME_LON,
 }
 
+# route short name -> gtfsId, populated at startup
+route_ids: dict[str, str] = {}
+
 clients: Set[WebSocket] = set()
 
 # ---------------------------------------------------------------------------
-# API endpoints
+# API
 # ---------------------------------------------------------------------------
 
 GRAPHQL_URL = "https://api.digitransit.fi/routing/v2/waltti/gtfs/v1"
-GTFSRT_URL = "https://api.digitransit.fi/realtime/gtfs-rt/v2/waltti/vehicle-positions"
 
 GRAPHQL_HEADERS = {
     "digitransit-subscription-key": config.API_KEY,
     "Content-Type": "application/json",
-}
-
-GTFSRT_HEADERS = {
-    "digitransit-subscription-key": config.API_KEY,
 }
 
 ARRIVALS_QUERY = """
@@ -70,6 +65,25 @@ ARRIVALS_QUERY = """
 # ---------------------------------------------------------------------------
 # Data fetchers
 # ---------------------------------------------------------------------------
+
+
+async def resolve_route_ids(client: httpx.AsyncClient) -> None:
+    """Fetch gtfsIds for the configured routes once at startup."""
+    feed = config.STOP_ID.split(":")[0]  # e.g. "Lappeenranta"
+    query = '{ routes(feeds:["%s"]) { gtfsId shortName } }' % feed
+    try:
+        resp = await client.post(
+            GRAPHQL_URL, json={"query": query}, headers=GRAPHQL_HEADERS, timeout=10
+        )
+        resp.raise_for_status()
+        routes = resp.json()["data"]["routes"]
+        allowed = {r.lower() for r in config.ROUTES_FILTER}
+        for r in routes:
+            if not allowed or r["shortName"].lower() in allowed:
+                route_ids[r["shortName"]] = r["gtfsId"]
+        print(f"Resolved route IDs: {route_ids}")
+    except Exception as e:
+        print(f"Route ID resolution error: {e}")
 
 
 async def fetch_arrivals(client: httpx.AsyncClient) -> None:
@@ -101,6 +115,7 @@ async def fetch_arrivals(client: httpx.AsyncClient) -> None:
                     "route": st["trip"]["routeShortName"],
                     "headsign": st["headsign"] or "",
                     "minutes": minutes,
+                    "epoch": departure_epoch,
                     "realtime": st["realtime"],
                 }
             )
@@ -115,46 +130,53 @@ async def fetch_arrivals(client: httpx.AsyncClient) -> None:
         print(f"Arrivals fetch error: {e}")
 
 
+def build_vehicles_query() -> str:
+    """Build a GraphQL query that fetches vehiclePositions for all tracked routes."""
+    parts = []
+    for short_name, gtfs_id in route_ids.items():
+        alias = "r_" + short_name.replace(" ", "_").replace("-", "_")
+        parts.append(
+            f'{alias}: route(id: "{gtfs_id}") {{'
+            f'  shortName'
+            f'  patterns {{'
+            f'    vehiclePositions {{'
+            f'      lat lon heading lastUpdated'
+            f'    }}'
+            f'  }}'
+            f'}}'
+        )
+    return "{ " + " ".join(parts) + " }"
+
+
 async def fetch_vehicles(client: httpx.AsyncClient) -> None:
-    global vehicles_unavailable
-    if vehicles_unavailable:
+    if not route_ids:
         return
     try:
-        resp = await client.get(GTFSRT_URL, headers=GTFSRT_HEADERS, timeout=10)
-        if resp.status_code == 404:
-            print("Vehicle positions not available for this region — live bus markers disabled.")
-            vehicles_unavailable = True
-            return
+        query = build_vehicles_query()
+        resp = await client.post(
+            GRAPHQL_URL, json={"query": query}, headers=GRAPHQL_HEADERS, timeout=10
+        )
         resp.raise_for_status()
-
-        feed = gtfs_realtime_pb2.FeedMessage()
-        feed.ParseFromString(resp.content)
+        data = resp.json().get("data", {})
 
         vehicles = []
-        for entity in feed.entity:
-            if not entity.HasField("vehicle"):
+        for route_data in data.values():
+            if not route_data:
                 continue
-            v = entity.vehicle
-            if not v.HasField("position"):
-                continue
-
-            route_id = ""
-            if v.HasField("trip"):
-                route_id = v.trip.route_id
-
-            bearing = 0.0
-            if v.position.HasField("bearing"):
-                bearing = v.position.bearing
-
-            vehicles.append(
-                {
-                    "id": entity.id,
-                    "route": route_id,
-                    "lat": v.position.latitude,
-                    "lon": v.position.longitude,
-                    "bearing": bearing,
-                }
-            )
+            short_name = route_data["shortName"]
+            for i, pattern in enumerate(route_data["patterns"]):
+                for j, vp in enumerate(pattern["vehiclePositions"]):
+                    if vp["lat"] is None or vp["lon"] is None:
+                        continue
+                    vehicles.append(
+                        {
+                            "id": f"{short_name}_{i}_{j}",
+                            "route": short_name,
+                            "lat": vp["lat"],
+                            "lon": vp["lon"],
+                            "bearing": vp["heading"] or 0,
+                        }
+                    )
 
         state["vehicles"] = vehicles
     except Exception as e:
@@ -194,7 +216,7 @@ async def broadcast() -> None:
 
 async def poll_loop() -> None:
     async with httpx.AsyncClient() as client:
-        # Initial fetch of both on startup
+        await resolve_route_ids(client)
         await asyncio.gather(fetch_arrivals(client), fetch_vehicles(client))
         await broadcast()
 
@@ -236,7 +258,6 @@ async def root():
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     clients.add(websocket)
-    # Send current state immediately so the client doesn't wait for next poll
     try:
         await websocket.send_text(
             json.dumps(
@@ -249,7 +270,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 }
             )
         )
-        # Keep connection open; server pushes data, client only listens
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
