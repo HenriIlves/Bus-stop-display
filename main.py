@@ -50,14 +50,14 @@ ARRIVALS_QUERY = """
     lat
     lon
     stoptimesWithoutPatterns(numberOfDepartures: %d, omitCanceled: false) {
-      scheduledArrival
-      realtimeArrival
-      realtime
-      serviceDay
-      trip {
-        routeShortName
-      }
-      headsign
+        scheduledArrival
+        realtimeArrival
+        realtime
+        serviceDay
+        trip {
+            routeShortName
+        }
+        headsign
     }
   }
 }
@@ -88,9 +88,7 @@ async def fetch_arrivals(client: httpx.AsyncClient) -> None:
         now = int(time.time())
         arrivals = []
         for st in stop["stoptimesWithoutPatterns"]:
-            arrival_secs = (
-                st["realtimeArrival"] if st["realtime"] else st["scheduledArrival"]
-            )
+            arrival_secs = st["realtimeArrival"] if st["realtime"] else st["scheduledArrival"]
             departure_epoch = st["serviceDay"] + arrival_secs
             minutes = round((departure_epoch - now) / 60)
             arrivals.append(
@@ -105,10 +103,10 @@ async def fetch_arrivals(client: httpx.AsyncClient) -> None:
 
         allowed = {r.lower() for r in config.ROUTES_FILTER}
         state["arrivals"] = [
-            a
-            for a in arrivals
-            if a["minutes"] >= 0 and (not allowed or a["route"].lower() in allowed)
-        ][: config.ARRIVALS_COUNT]
+            a for a in arrivals
+            if a["minutes"] >= 0
+            and (not allowed or a["route"].lower() in allowed)
+        ][:config.ARRIVALS_COUNT]
     except Exception as e:
         print(f"Arrivals fetch error: {e}")
 
@@ -185,7 +183,9 @@ async def broadcast() -> None:
 
     # Flush stale vehicles before broadcasting
     cutoff = time.time() - VEHICLE_STALE_SECONDS
-    state["vehicles"] = [v for v in vehicle_state.values() if v["updated"] > cutoff]
+    state["vehicles"] = [
+        v for v in vehicle_state.values() if v["updated"] > cutoff
+    ]
 
     message = json.dumps(
         {
