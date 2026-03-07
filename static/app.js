@@ -22,24 +22,29 @@ const map = L.map("map", {
     doubleClickZoom: false,
     boxZoom: false,
     keyboard: false,
-}).setView([61.0562866, 28.19533189], 14);
+}).setView([61.0562866, 28.19533189], 12);
 
-// Stadia Alidade Smooth Dark — muted dark, easy on the eyes
-const tileUrl =
-    "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png";
+L.tileLayer(
+    "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png",
+    { maxZoom: 19 },
+).addTo(map);
 
-L.tileLayer(tileUrl, { maxZoom: 19 }).addTo(map);
-
-// Stop marker (blue dot)
 const stopIcon = L.divIcon({
     className: "",
     html: '<div class="stop-marker"></div>',
     iconSize: [16, 16],
     iconAnchor: [8, 8],
 });
-let stopMarker = null;
 
-// Vehicle markers keyed by entity id
+const destIcon = L.divIcon({
+    className: "",
+    html: '<div class="dest-marker"></div>',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+});
+
+let stopMarker = null;
+let destMarker = null;
 const vehicleMarkers = {};
 
 function makeBusIcon(route, bearing) {
@@ -62,7 +67,14 @@ function makeBusIcon(route, bearing) {
 }
 
 // -----------------------------------------------------------------------
-// Render arrivals
+// State
+// -----------------------------------------------------------------------
+let selectedDest = null; // null = default view, or destination name string
+let fabOpen = false;
+let currentData = null;
+
+// -----------------------------------------------------------------------
+// Utilities
 // -----------------------------------------------------------------------
 function escHtml(str) {
     return String(str)
@@ -72,6 +84,104 @@ function escHtml(str) {
         .replace(/"/g, "&quot;");
 }
 
+function fmtClock(epochSec) {
+    const d = new Date(epochSec * 1000);
+    return (
+        String(d.getHours()).padStart(2, "0") +
+        ":" +
+        String(d.getMinutes()).padStart(2, "0")
+    );
+}
+
+// -----------------------------------------------------------------------
+// FAB
+// -----------------------------------------------------------------------
+function toggleFab() {
+    fabOpen = !fabOpen;
+    document.getElementById("fab-menu").classList.toggle("open", fabOpen);
+}
+
+function selectDest(name) {
+    selectedDest = name;
+    fabOpen = false;
+    document.getElementById("fab-menu").classList.remove("open");
+    updateFabBtn();
+    rebuildPanel();
+    updateDestMarker();
+}
+
+function clearDest() {
+    selectedDest = null;
+    fabOpen = false;
+    document.getElementById("fab-menu").classList.remove("open");
+    updateFabBtn();
+    rebuildPanel();
+    updateDestMarker();
+}
+
+function updateFabBtn() {
+    document.getElementById("fab-btn").textContent = selectedDest || "Koti";
+}
+
+function renderFabMenu(favoritesMeta) {
+    let html = "";
+    for (const fav of favoritesMeta) {
+        const active = selectedDest === fav.name ? " active" : "";
+        html += `<button class="fab-dest-btn${active}" onclick="selectDest('${escHtml(fav.name)}')">${escHtml(fav.name)}</button>`;
+    }
+    if (selectedDest) {
+        html += `<button class="fab-dest-btn koti" onclick="clearDest()">✕ Koti</button>`;
+    }
+    document.getElementById("fab-menu").innerHTML = html;
+}
+
+function updateDestMarker() {
+    if (destMarker) {
+        map.removeLayer(destMarker);
+        destMarker = null;
+    }
+    if (!selectedDest || !currentData) return;
+    const fav = (currentData.favorites_meta || []).find(
+        (f) => f.name === selectedDest,
+    );
+    if (fav && fav.dest_lat && fav.dest_lon) {
+        destMarker = L.marker([fav.dest_lat, fav.dest_lon], {
+            icon: destIcon,
+        }).addTo(map);
+    }
+}
+
+// -----------------------------------------------------------------------
+// Arrivals panel
+// -----------------------------------------------------------------------
+function rebuildPanel() {
+    const panel = document.getElementById("arrivals-panel");
+
+    if (!selectedDest) {
+        panel.innerHTML = `
+            <table id="arrivals-table" class="mode-default">
+                <colgroup><col><col></colgroup>
+                <tbody id="arrivals-body">
+                    <tr><td colspan="2" class="no-arrivals">Ladataan...</td></tr>
+                </tbody>
+            </table>`;
+        if (currentData) renderArrivals(currentData.arrivals);
+    } else {
+        panel.innerHTML = `
+            <div id="dest-header">→ ${escHtml(selectedDest)}</div>
+            <table id="arrivals-table" class="mode-dest">
+                <colgroup><col><col><col></colgroup>
+                <tbody id="arrivals-body">
+                    <tr><td colspan="3" class="no-arrivals">Ladataan...</td></tr>
+                </tbody>
+            </table>`;
+        if (currentData)
+            renderItineraries(
+                (currentData.itineraries || {})[selectedDest] || [],
+            );
+    }
+}
+
 function renderArrivals(arrivals) {
     const tbody = document.getElementById("arrivals-body");
     if (!arrivals || arrivals.length === 0) {
@@ -79,34 +189,63 @@ function renderArrivals(arrivals) {
             '<tr><td colspan="2" class="no-arrivals">Ei lahtoja</td></tr>';
         return;
     }
-
     tbody.innerHTML = arrivals
         .map((a) => {
-            const realtimeDot = a.realtime
+            const dot = a.realtime
                 ? '<span class="realtime-dot"></span>'
                 : "";
             let timeHtml;
             if (a.minutes === 0) {
                 timeHtml = `<span class="time-now">Nyt${a.realtime ? '<span class="realtime-dot"></span>' : ""}</span>`;
             } else if (a.minutes <= 10) {
-                timeHtml = `<span class="time-value">${a.minutes}</span><span class="time-unit">min</span>${realtimeDot}`;
+                timeHtml = `<span class="time-value">${a.minutes}</span><span class="time-unit">min</span>${dot}`;
             } else {
-                const d = new Date(a.epoch * 1000);
-                const hh = String(d.getHours()).padStart(2, "0");
-                const mm = String(d.getMinutes()).padStart(2, "0");
-                timeHtml = `<span class="time-value">${hh}:${mm}</span>${realtimeDot}`;
+                timeHtml = `<span class="time-value">${fmtClock(a.epoch)}</span>${dot}`;
             }
-            return `
-      <tr class="arrival-row">
-        <td class="col-route"><span class="route-badge">${escHtml(a.route)}</span></td>
-        <td class="col-time">${timeHtml}</td>
-      </tr>`;
+            return `<tr class="arrival-row">
+                <td class="col-route"><span class="route-badge">${escHtml(a.route)}</span></td>
+                <td class="col-time">${timeHtml}</td>
+            </tr>`;
+        })
+        .join("");
+}
+
+function renderItineraries(itineraries) {
+    const tbody = document.getElementById("arrivals-body");
+    if (!itineraries || itineraries.length === 0) {
+        tbody.innerHTML =
+            '<tr><td colspan="3" class="no-arrivals">Ei reittejä</td></tr>';
+        return;
+    }
+    tbody.innerHTML = itineraries
+        .map((it) => {
+            const dot = it.realtime
+                ? '<span class="realtime-dot"></span>'
+                : "";
+            let leavesHtml;
+            if (it.minutes === 0) {
+                leavesHtml = `<span class="time-now">Nyt</span>`;
+            } else if (it.minutes <= 10) {
+                leavesHtml = `<span class="time-value">${it.minutes}</span><span class="time-unit">min</span>${dot}`;
+            } else {
+                leavesHtml = `<span class="time-value">${fmtClock(it.departs)}</span>${dot}`;
+            }
+            const walkHtml =
+                it.walk_after > 0
+                    ? `<span class="walk-after">(+${it.walk_after})</span>`
+                    : "";
+            const arrivesHtml = `<span class="time-value">${fmtClock(it.arrives)}</span>${walkHtml}`;
+            return `<tr class="arrival-row">
+                <td class="col-route"><span class="route-badge">${escHtml(it.route)}</span></td>
+                <td class="col-time">${leavesHtml}</td>
+                <td class="col-time">${arrivesHtml}</td>
+            </tr>`;
         })
         .join("");
 }
 
 // -----------------------------------------------------------------------
-// Render vehicles
+// Vehicles
 // -----------------------------------------------------------------------
 function renderVehicles(vehicles) {
     const seen = new Set();
@@ -122,7 +261,6 @@ function renderVehicles(vehicles) {
             );
         }
     }
-    // Remove markers for vehicles no longer in feed
     for (const id of Object.keys(vehicleMarkers)) {
         if (!seen.has(id)) {
             map.removeLayer(vehicleMarkers[id]);
@@ -146,6 +284,7 @@ function connect() {
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        currentData = data;
 
         if (data.stop_name) {
             document.getElementById("stop-name").textContent = data.stop_name;
@@ -158,7 +297,17 @@ function connect() {
             }).addTo(map);
         }
 
-        renderArrivals(data.arrivals);
+        if (data.favorites_meta) {
+            renderFabMenu(data.favorites_meta);
+        }
+
+        // Update arrivals or itineraries depending on current mode
+        if (!selectedDest) {
+            renderArrivals(data.arrivals);
+        } else {
+            renderItineraries((data.itineraries || {})[selectedDest] || []);
+        }
+
         renderVehicles(data.vehicles || []);
     };
 

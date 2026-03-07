@@ -19,7 +19,7 @@
 
         <div id="main">
             <div id="arrivals-panel">
-                <table id="arrivals-table">
+                <table id="arrivals-table" class="mode-default">
                     <colgroup>
                         <col />
                         <col />
@@ -33,10 +33,16 @@
                     </tbody>
                 </table>
             </div>
+
             <div id="map-panel">
                 <div id="map"></div>
                 <div id="status">Yhdistetaan...</div>
             </div>
+        </div>
+
+        <div id="fab-container">
+            <div id="fab-menu"></div>
+            <button id="fab-btn" onclick="toggleFab()">Koti</button>
         </div>
 
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

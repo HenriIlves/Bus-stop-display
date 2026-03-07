@@ -20,20 +20,24 @@ import config
 
 state = {
     "arrivals": [],
-    "vehicles": [],
     "stop_name": "",
-    "stop_lat": config.HOME_LAT,
-    "stop_lon": config.HOME_LON,
+    "stop_lat": config.MAP_LAT,
+    "stop_lon": config.MAP_LON,
+    "itineraries": {fav["name"]: [] for fav in config.FAVORITES},
+    "favorites_meta": [],
+    "vehicles": [],
 }
 
-# Live vehicle positions keyed by vehicle entity ID.
-# Updated directly by the MQTT thread; read by the broadcast loop.
+# Stop coordinates fetched at startup: stop_id -> {"lat", "lon", "name"}
+stop_coords: dict = {}
+
+# Live vehicle positions keyed by vehicle entity ID
 vehicle_state: dict = {}
 
 clients: Set[WebSocket] = set()
 
 # ---------------------------------------------------------------------------
-# GraphQL — arrivals
+# GraphQL — stop time arrivals (default view)
 # ---------------------------------------------------------------------------
 
 GRAPHQL_URL = "https://api.digitransit.fi/routing/v2/waltti/gtfs/v1"
@@ -62,9 +66,58 @@ ARRIVALS_QUERY = """
   }
 }
 """ % (
-    config.STOP_ID,
+    config.DEFAULT_STOP_ID,
     config.ARRIVALS_COUNT * 5,
 )
+
+
+def _fav_to_stops(fav: dict) -> list:
+    """Return the list of destination stop IDs for a favorite."""
+    if "to_stops" in fav:
+        return fav["to_stops"]
+    return [fav["to_stop"]]
+
+
+async def fetch_stop_coords(client: httpx.AsyncClient) -> None:
+    """Batch-fetch lat/lon for all stop IDs referenced in config."""
+    stop_ids = {config.DEFAULT_STOP_ID}
+    for fav in config.FAVORITES:
+        stop_ids.add(fav["from_stop"])
+        for sid in _fav_to_stops(fav):
+            stop_ids.add(sid)
+
+    aliases = {f"s{i}": sid for i, sid in enumerate(sorted(stop_ids))}
+    fields = "\n".join(
+        f'{alias}: stop(id: "{sid}") {{ lat lon name }}'
+        for alias, sid in aliases.items()
+    )
+    query = "{ " + fields + " }"
+
+    try:
+        resp = await client.post(
+            GRAPHQL_URL, json={"query": query}, headers=GRAPHQL_HEADERS, timeout=10
+        )
+        resp.raise_for_status()
+        data = resp.json()["data"]
+        for alias, sid in aliases.items():
+            stop = data.get(alias)
+            if stop:
+                stop_coords[sid] = stop
+                print(f"Stop coords: {sid} → {stop['name']} ({stop['lat']}, {stop['lon']})")
+            else:
+                print(f"Stop not found: {sid}")
+    except Exception as e:
+        print(f"Stop coord fetch error: {e}")
+
+    # Build favorites_meta for the frontend (destination pin coordinates)
+    state["favorites_meta"] = [
+        {
+            "name": fav["name"],
+            "dest_lat": fav.get("dest_lat") or stop_coords.get(_fav_to_stops(fav)[0], {}).get("lat"),
+            "dest_lon": fav.get("dest_lon") or stop_coords.get(_fav_to_stops(fav)[0], {}).get("lon"),
+        }
+        for fav in config.FAVORITES
+    ]
 
 
 async def fetch_arrivals(client: httpx.AsyncClient) -> None:
@@ -78,7 +131,7 @@ async def fetch_arrivals(client: httpx.AsyncClient) -> None:
         resp.raise_for_status()
         stop = resp.json()["data"]["stop"]
         if not stop:
-            print("Stop not found — check STOP_ID in config.py")
+            print("Default stop not found — check DEFAULT_STOP_ID in config.py")
             return
 
         state["stop_name"] = stop["name"]
@@ -86,11 +139,16 @@ async def fetch_arrivals(client: httpx.AsyncClient) -> None:
         state["stop_lon"] = stop["lon"]
 
         now = int(time.time())
+        allowed = {r.lower() for r in config.ROUTES_FILTER}
         arrivals = []
         for st in stop["stoptimesWithoutPatterns"]:
             arrival_secs = st["realtimeArrival"] if st["realtime"] else st["scheduledArrival"]
             departure_epoch = st["serviceDay"] + arrival_secs
             minutes = round((departure_epoch - now) / 60)
+            if minutes < 0:
+                continue
+            if allowed and st["trip"]["routeShortName"].lower() not in allowed:
+                continue
             arrivals.append(
                 {
                     "route": st["trip"]["routeShortName"],
@@ -100,15 +158,127 @@ async def fetch_arrivals(client: httpx.AsyncClient) -> None:
                     "realtime": st["realtime"],
                 }
             )
-
-        allowed = {r.lower() for r in config.ROUTES_FILTER}
-        state["arrivals"] = [
-            a for a in arrivals
-            if a["minutes"] >= 0
-            and (not allowed or a["route"].lower() in allowed)
-        ][:config.ARRIVALS_COUNT]
+        state["arrivals"] = arrivals[: config.ARRIVALS_COUNT]
     except Exception as e:
         print(f"Arrivals fetch error: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Routing — itinerary planning (destination view)
+# ---------------------------------------------------------------------------
+
+ROUTING_QUERY = """
+{
+  planConnection(
+    origin:      {location: {coordinate: {latitude: %f, longitude: %f}}}
+    destination: {location: {coordinate: {latitude: %f, longitude: %f}}}
+    first: 20
+    searchWindow: "PT4H"
+  ) {
+    edges {
+      node {
+        start
+        end
+        legs {
+          mode
+          end { scheduledTime }
+          realtimeState
+          trip { routeShortName }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def _parse_dt(val) -> int:
+    """Convert OTP2 DateTime (ISO string or Unix-ms integer) to epoch seconds."""
+    if isinstance(val, (int, float)):
+        return int(val) // 1000
+    from datetime import datetime
+    return int(datetime.fromisoformat(str(val)).timestamp())
+
+
+async def fetch_itineraries(client: httpx.AsyncClient) -> None:
+    now = int(time.time())
+    allowed = {r.lower() for r in config.ROUTES_FILTER}
+
+    TRANSIT_MODES = {"BUS", "TRAM", "RAIL", "SUBWAY", "FERRY"}
+
+    for fav in config.FAVORITES:
+        from_c = stop_coords.get(fav["from_stop"])
+        if not from_c:
+            continue
+
+        results = []
+        for to_sid in _fav_to_stops(fav):
+            to_c = stop_coords.get(to_sid)
+            if not to_c:
+                continue
+
+            dest_lat = fav.get("dest_lat") or to_c["lat"]
+            dest_lon = fav.get("dest_lon") or to_c["lon"]
+
+            query = ROUTING_QUERY % (
+                from_c["lat"], from_c["lon"],
+                dest_lat, dest_lon,
+            )
+
+            try:
+                resp = await client.post(
+                    GRAPHQL_URL,
+                    json={"query": query},
+                    headers=GRAPHQL_HEADERS,
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                edges = resp.json()["data"]["planConnection"]["edges"]
+
+                for edge in edges:
+                    node = edge["node"]
+                    transit_legs = [l for l in node["legs"] if l["mode"] in TRANSIT_MODES]
+                    if not transit_legs:
+                        continue
+
+                    first_leg = transit_legs[0]
+                    last_leg = transit_legs[-1]
+                    route_name = (first_leg.get("trip") or {}).get("routeShortName", "")
+                    if route_name.lower() not in allowed:
+                        continue
+
+                    departs_epoch = _parse_dt(node["start"])
+                    bus_arrives_epoch = _parse_dt(last_leg["end"]["scheduledTime"])
+                    total_arrives_epoch = _parse_dt(node["end"])
+                    walk_after = max(0, round((total_arrives_epoch - bus_arrives_epoch) / 60))
+                    minutes = round((departs_epoch - now) / 60)
+                    if minutes < 0:
+                        continue
+
+                    results.append(
+                        {
+                            "route": route_name,
+                            "departs": departs_epoch,
+                            "arrives": bus_arrives_epoch,
+                            "walk_after": walk_after,
+                            "minutes": minutes,
+                            "realtime": first_leg.get("realtimeState", "SCHEDULED") != "SCHEDULED",
+                        }
+                    )
+            except Exception as e:
+                print(f"Routing fetch error for '{fav['name']}' → {to_sid}: {e}")
+
+        # Merge results from all destination stops: deduplicate by (route, departs),
+        # sort by departure time
+        seen = set()
+        merged = []
+        for r in sorted(results, key=lambda x: x["departs"]):
+            key = (r["route"], r["departs"])
+            if key not in seen:
+                seen.add(key)
+                merged.append(r)
+
+        state["itineraries"][fav["name"]] = merged[: config.ARRIVALS_COUNT]
 
 
 # ---------------------------------------------------------------------------
@@ -117,11 +287,11 @@ async def fetch_arrivals(client: httpx.AsyncClient) -> None:
 
 MQTT_HOST = "mqtt.digitransit.fi"
 MQTT_PORT = 1883
-VEHICLE_STALE_SECONDS = 120  # drop vehicles not updated within this window
+VEHICLE_STALE_SECONDS = 120
 
 
 def on_mqtt_connect(client, userdata, flags, rc, props=None):
-    feed = config.STOP_ID.split(":")[0]  # e.g. "Lappeenranta"
+    feed = config.DEFAULT_STOP_ID.split(":")[0]
     for route in config.ROUTES_FILTER:
         topic = f"/gtfsrt/vp/{feed}/+/+/+/{route}/#"
         client.subscribe(topic)
@@ -130,7 +300,6 @@ def on_mqtt_connect(client, userdata, flags, rc, props=None):
 
 def on_mqtt_message(client, userdata, msg):
     try:
-        # Route short name is at position 7 of the topic
         parts = msg.topic.split("/")
         route = parts[7] if len(parts) > 7 else ""
 
@@ -181,19 +350,18 @@ async def broadcast() -> None:
     if not clients:
         return
 
-    # Flush stale vehicles before broadcasting
     cutoff = time.time() - VEHICLE_STALE_SECONDS
-    state["vehicles"] = [
-        v for v in vehicle_state.values() if v["updated"] > cutoff
-    ]
+    state["vehicles"] = [v for v in vehicle_state.values() if v["updated"] > cutoff]
 
     message = json.dumps(
         {
             "arrivals": state["arrivals"],
-            "vehicles": state["vehicles"],
             "stop_name": state["stop_name"],
             "stop_lat": state["stop_lat"],
             "stop_lon": state["stop_lon"],
+            "itineraries": state["itineraries"],
+            "favorites_meta": state["favorites_meta"],
+            "vehicles": state["vehicles"],
         }
     )
     dead: Set[WebSocket] = set()
@@ -206,12 +374,11 @@ async def broadcast() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Background polling loop (arrivals only — vehicles come from MQTT)
+# Background loops
 # ---------------------------------------------------------------------------
 
 
 async def vehicle_broadcast_loop() -> None:
-    """Push vehicle positions to clients every 5 seconds."""
     while True:
         await asyncio.sleep(config.VEHICLES_INTERVAL)
         await broadcast()
@@ -219,12 +386,15 @@ async def vehicle_broadcast_loop() -> None:
 
 async def poll_loop() -> None:
     async with httpx.AsyncClient() as client:
+        await fetch_stop_coords(client)
         await fetch_arrivals(client)
+        await fetch_itineraries(client)
         await broadcast()
 
         while True:
             await asyncio.sleep(config.ARRIVALS_INTERVAL)
             await fetch_arrivals(client)
+            await fetch_itineraries(client)
             await broadcast()
 
 
@@ -260,10 +430,12 @@ async def websocket_endpoint(websocket: WebSocket):
             json.dumps(
                 {
                     "arrivals": state["arrivals"],
-                    "vehicles": state["vehicles"],
                     "stop_name": state["stop_name"],
                     "stop_lat": state["stop_lat"],
                     "stop_lon": state["stop_lon"],
+                    "itineraries": state["itineraries"],
+                    "favorites_meta": state["favorites_meta"],
+                    "vehicles": state["vehicles"],
                 }
             )
         )
