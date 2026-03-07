@@ -1,0 +1,215 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif;
+    width: 800px;
+    height: 480px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---- Header ---- */
+#header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    height: 48px;
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    flex-shrink: 0;
+}
+
+#stop-name {
+    font-size: 18px;
+    font-weight: bold;
+    color: #c70067;
+    letter-spacing: 0.02em;
+}
+
+#clock {
+    font-size: 22px;
+    font-weight: bold;
+    color: #e6edf3;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- Main area ---- */
+#main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* ---- Arrivals panel ---- */
+#arrivals-panel {
+    width: 200px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #30363d;
+    overflow: hidden;
+}
+
+#arrivals-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+#arrivals-table colgroup col:nth-child(1) {
+    width: 100px;
+}
+#arrivals-table colgroup col:nth-child(2) {
+    width: 100px;
+}
+
+.arrival-row {
+    border-bottom: 1px solid #21262d;
+    height: 53px;
+}
+
+.arrival-row:last-child {
+    border-bottom: none;
+}
+
+.col-route {
+    text-align: left;
+    padding-left: 20px;
+}
+
+.route-badge {
+    display: inline-block;
+    background: #c70067;
+    color: #fff;
+    font-size: 20px;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 2px 8px;
+    min-width: 44px;
+    text-align: center;
+}
+
+.col-time {
+    text-align: right;
+    padding-right: 20px;
+}
+
+.time-value {
+    font-size: 22px;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+}
+
+.time-unit {
+    font-size: 11px;
+    color: #8b949e;
+    margin-left: 1px;
+}
+
+.time-now {
+    font-size: 16px;
+    font-weight: bold;
+    color: #3fb950;
+}
+
+.realtime-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #3fb950;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+.no-arrivals {
+    padding: 20px 14px;
+    color: #8b949e;
+    font-size: 15px;
+    text-align: center;
+}
+
+/* ---- Map panel ---- */
+#map-panel {
+    flex: 1;
+    position: relative;
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+}
+
+/* Leaflet overrides for dark tiles */
+.leaflet-tile-pane {
+    filter: brightness(0.85) saturate(0.8);
+}
+
+/* Stop marker */
+.stop-marker {
+    width: 16px;
+    height: 16px;
+    background: #c70067;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 6px rgba(199, 0, 103, 0.7);
+}
+
+/* Bus marker */
+.bus-marker-wrap {
+    position: relative;
+    width: 32px;
+    height: 32px;
+}
+
+.bus-arrow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.bus-arrow svg {
+    width: 32px;
+    height: 32px;
+}
+
+.bus-label {
+    position: absolute;
+    bottom: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(13, 17, 23, 0.85);
+    color: #e6edf3;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 1px 4px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+/* Status overlay */
+#status {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: rgba(13, 17, 23, 0.7);
+    color: #8b949e;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    z-index: 1000;
+    pointer-events: none;
+}

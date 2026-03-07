@@ -1,0 +1,349 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif;
+    width: 800px;
+    height: 480px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+/* ---- Header ---- */
+#header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    height: 48px;
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    flex-shrink: 0;
+}
+
+#stop-name {
+    font-size: 18px;
+    font-weight: bold;
+    color: #c70067;
+    letter-spacing: 0.02em;
+}
+
+#clock {
+    font-size: 22px;
+    font-weight: bold;
+    color: #e6edf3;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- Main area ---- */
+#main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* ---- Arrivals panel ---- */
+#arrivals-panel {
+    width: 200px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #30363d;
+    overflow: hidden;
+}
+
+/* Destination mode header strip */
+#dest-header {
+    height: 28px;
+    line-height: 28px;
+    padding: 0 12px;
+    background: #c70067;
+    color: #fff;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+}
+
+/* Arrivals table — shared */
+#arrivals-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+/* Default mode: 2 equal columns */
+.mode-default colgroup col:nth-child(1) {
+    width: 100px;
+}
+.mode-default colgroup col:nth-child(2) {
+    width: 100px;
+}
+
+/* Destination mode: 3 columns */
+.mode-dest colgroup col:nth-child(1) {
+    width: 54px;
+}
+.mode-dest colgroup col:nth-child(2) {
+    width: 68px;
+}
+.mode-dest colgroup col:nth-child(3) {
+    width: 78px;
+}
+
+.arrival-row {
+    border-bottom: 1px solid #21262d;
+    height: 53px;
+}
+
+.mode-dest .arrival-row {
+    height: 50px;
+}
+
+.arrival-row:last-child {
+    border-bottom: none;
+}
+
+.col-route {
+    text-align: left;
+    padding-left: 12px;
+}
+
+.route-badge {
+    display: inline-block;
+    background: #c70067;
+    color: #fff;
+    font-size: 18px;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 2px 6px;
+    min-width: 40px;
+    text-align: center;
+}
+
+.mode-default .route-badge {
+    font-size: 20px;
+    padding: 2px 8px;
+    min-width: 44px;
+}
+
+.col-time {
+    text-align: right;
+    padding-right: 10px;
+}
+
+.mode-default .col-time {
+    padding-right: 20px;
+}
+
+.time-value {
+    font-size: 18px;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+}
+
+.mode-default .time-value {
+    font-size: 22px;
+}
+
+.mode-dest .time-value {
+    font-size: 16px;
+}
+
+.time-unit {
+    font-size: 11px;
+    color: #8b949e;
+    margin-left: 1px;
+}
+
+.walk-after {
+    font-size: 11px;
+    color: #8b949e;
+    margin-left: 2px;
+}
+
+.time-now {
+    font-size: 16px;
+    font-weight: bold;
+    color: #3fb950;
+}
+
+.realtime-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #3fb950;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+.no-arrivals {
+    padding: 20px 14px;
+    color: #8b949e;
+    font-size: 15px;
+    text-align: center;
+}
+
+/* ---- Map panel ---- */
+#map-panel {
+    flex: 1;
+    position: relative;
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+}
+
+/* Leaflet overrides for dark tiles */
+.leaflet-tile-pane {
+    filter: brightness(0.85) saturate(0.8);
+}
+
+/* Home stop marker */
+.stop-marker {
+    width: 16px;
+    height: 16px;
+    background: #c70067;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 6px rgba(199, 0, 103, 0.7);
+}
+
+/* Destination marker */
+.dest-marker {
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border: 3px solid #c70067;
+    border-radius: 50%;
+    box-shadow: 0 0 6px rgba(199, 0, 103, 0.5);
+}
+
+/* Bus marker */
+.bus-marker-wrap {
+    position: relative;
+    width: 32px;
+    height: 32px;
+}
+
+.bus-arrow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.bus-arrow svg {
+    width: 32px;
+    height: 32px;
+}
+
+.bus-label {
+    position: absolute;
+    bottom: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(13, 17, 23, 0.85);
+    color: #e6edf3;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 1px 4px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+/* Status overlay */
+#status {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: rgba(13, 17, 23, 0.7);
+    color: #8b949e;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+/* ---- FAB (floating destination button) ---- */
+#fab-container {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+}
+
+#fab-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height 0.2s ease-out;
+}
+
+#fab-menu.open {
+    max-height: 300px;
+}
+
+.fab-dest-btn {
+    background: rgba(13, 17, 23, 0.92);
+    color: #e6edf3;
+    border: 1px solid #30363d;
+    border-radius: 20px;
+    padding: 10px 20px;
+    font-size: 16px;
+    font-weight: bold;
+    font-family: inherit;
+    cursor: pointer;
+    min-width: 140px;
+    text-align: center;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
+
+.fab-dest-btn.active {
+    background: #c70067;
+    border-color: #c70067;
+    color: #fff;
+}
+
+.fab-dest-btn.koti {
+    color: #8b949e;
+    border-color: #21262d;
+    font-size: 14px;
+}
+
+#fab-btn {
+    background: #c70067;
+    color: #fff;
+    border: none;
+    border-radius: 20px;
+    padding: 10px 20px;
+    font-size: 15px;
+    font-weight: bold;
+    font-family: inherit;
+    cursor: pointer;
+    min-width: 100px;
+    text-align: center;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
