@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fi">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+        <meta name="theme-color" content="#0d1117" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <title>Bussit</title>
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
+        <link
+            rel="stylesheet"
+            href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        />
+        <link rel="stylesheet" href="/static/style.css" />
+    </head>
+    <body>
+        <header id="top">
+            <div class="title-row">
+                <div class="stop-title">
+                    <h1 id="stop-name">Ladataan…</h1>
+                    <span id="stop-code"></span>
+                </div>
+                <div id="clock">--:--</div>
+            </div>
+            <nav id="stop-chips" aria-label="Pysäkit"></nav>
+        </header>
+
+        <main id="main">
+            <section id="list-panel" aria-label="Lähtevät">
+                <ol id="departures"></ol>
+                <p id="list-status"></p>
+            </section>
+            <section id="map-panel" aria-label="Kartta">
+                <div id="map"></div>
+                <button id="recenter" type="button" aria-label="Keskitä pysäkkiin">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="3.5" />
+                        <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+                        <circle cx="12" cy="12" r="7.5" fill="none" />
+                    </svg>
+                </button>
+                <div id="map-status"></div>
+            </section>
+        </main>
+
+        <dialog id="stop-dialog">
+            <form method="dialog" class="dialog-head">
+                <h2>Pysäkit</h2>
+                <button value="close" class="icon-btn" aria-label="Sulje">✕</button>
+            </form>
+            <div class="search-row">
+                <input
+                    id="stop-search"
+                    type="search"
+                    placeholder="Hae nimellä tai numerolla"
+                    autocomplete="off"
+                    enterkeyhint="search"
+                />
+                <button id="nearby-btn" type="button">Lähellä</button>
+            </div>
+            <p id="search-status"></p>
+            <ul id="search-results" class="stop-list"></ul>
+            <h3>Omat pysäkit</h3>
+            <ul id="saved-list" class="stop-list"></ul>
+        </dialog>
+
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script src="/static/app.js"></script>
+    </body>
+</html>

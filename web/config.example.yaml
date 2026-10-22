@@ -1,0 +1,29 @@
+# Digitransit Waltti feed. Every stop ID starts with it, e.g. "Lappeenranta:123456".
+# Live bus positions are streamed for the whole feed.
+feed: Lappeenranta
+
+# Quick-pick stops for a device that hasn't saved its own list yet (each
+# phone/browser keeps its own list after that). The first stop is also the
+# one the Homepage widget shows by default.
+# Find IDs with the search in the app, or the "#..." part of its URL.
+stops:
+  - id: Lappeenranta:XXXXXX
+    label: Koti          # optional, defaults to the stop's name
+  # - id: Lappeenranta:YYYYYY
+  #   routes: ["5"]      # optional, overrides the routes filter below for this stop
+
+# Only show these routes, in departures and on the map. Empty or left out = all.
+routes: ["7", "14", "23"]
+
+# Initial map view before a stop is chosen.
+map:
+  lat: 61.0587
+  lon: 28.1887
+  zoom: 14
+  # Stadia Maps tiles work without a key on localhost. For bus.ilves.xyz,
+  # either add that domain in a free account at client.stadiamaps.com
+  # (no key needed then) or put an API key here.
+  # stadia_api_key: ""
+
+# Departures listed per stop.
+departures: 12

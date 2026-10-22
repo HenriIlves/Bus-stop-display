@@ -1,0 +1,4 @@
+.env
+config.yaml
+*.md
+deploy.sh

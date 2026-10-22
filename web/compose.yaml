@@ -1,0 +1,24 @@
+services:
+  bus:
+    build: .
+    image: bus-stop-web:latest
+    container_name: bus
+    restart: unless-stopped
+    # Only reachable through Caddy at https://bus.ilves.xyz.
+    ports:
+      - 127.0.0.1:8090:8000
+    env_file:
+      - .env
+    environment:
+      TZ: Europe/Helsinki
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+    # Also join Homepage's network so its widget can call http://bus:8000.
+    networks:
+      - default
+      - homepage
+
+networks:
+  homepage:
+    name: homepage_default
+    external: true
