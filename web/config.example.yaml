@@ -5,7 +5,7 @@ feed: Lappeenranta
 # Quick-pick stops for a device that hasn't saved its own list yet (each
 # phone/browser keeps its own list after that). The first stop is also the
 # one the Homepage widget shows by default.
-# Find IDs with the search in the app, or the "#..." part of its URL.
+# Find IDs with the Digitransit GraphiQL explorer (see the touch/ README).
 stops:
   - id: Lappeenranta:XXXXXX
     label: Koti          # optional, defaults to the stop's name

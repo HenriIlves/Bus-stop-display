@@ -450,7 +450,6 @@ function selectStop(id) {
         state.stop = null;
         state.focusRoute = null;
         store(CURRENT_KEY, id);
-        history.replaceState(null, "", "#" + encodeURIComponent(id));
         $("stop-name").textContent = state.saved.find((s) => s.id === id)?.name || "Ladataan…";
         $("stop-code").textContent = "";
         $("departures").replaceChildren();
@@ -473,11 +472,6 @@ document.addEventListener("visibilitychange", () => {
         loadDepartures();
         loadVehicles();
     }
-});
-
-window.addEventListener("hashchange", () => {
-    const id = decodeURIComponent(location.hash.slice(1));
-    if (id && id !== state.stopId) selectStop(id);
 });
 
 // -----------------------------------------------------------------------
@@ -508,8 +502,9 @@ async function start() {
     state.saved = Array.isArray(saved) ? saved : state.config.stops;
     renderChips();
 
-    const fromHash = decodeURIComponent(location.hash.slice(1));
-    const initial = fromHash || load(CURRENT_KEY) || state.saved[0]?.id || state.config.stops[0]?.id;
+    // The URL never names a stop; each device reopens the one it showed last.
+    if (location.pathname !== "/" || location.hash) history.replaceState(null, "", "/");
+    const initial = load(CURRENT_KEY) || state.saved[0]?.id || state.config.stops[0]?.id;
     if (initial) {
         selectStop(initial);
     } else {
