@@ -1,17 +1,22 @@
-FROM python:3.13-slim
+FROM rust:1-alpine AS build
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    CONFIG_PATH=/config/config.yaml
+RUN apk add --no-cache musl-dev cmake make clang perl
+WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
+COPY src/ src/
+RUN cargo build --release --locked
+
+FROM alpine:3
+
+RUN apk add --no-cache ca-certificates
+ENV CONFIG_PATH=/config/config.yaml
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY app/ .
+COPY --from=build /src/target/release/bus-stop-web .
+COPY static/ static/
 
 USER nobody
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+    CMD wget -q -T 4 -O /dev/null http://127.0.0.1:8000/healthz
+CMD ["./bus-stop-web"]
